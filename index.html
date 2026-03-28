@@ -105,6 +105,43 @@ body { background:var(--bg); color:var(--text); font-family:var(--font); }
 <body>
 <div id="app"></div>
 <script>
+// ─── ElevenLabs TTS ───
+var ELEVEN_API_KEY = 'sk_ba796c4afb1274c522b2952a007702014c903f19f8b2a953';
+var ELEVEN_VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel
+
+function speakWithElevenLabs(text) {
+  fetch('https://api.elevenlabs.io/v1/text-to-speech/' + ELEVEN_VOICE_ID + '/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'xi-api-key': ELEVEN_API_KEY
+    },
+    body: JSON.stringify({
+      text: text,
+      model_id: 'eleven_flash_v2_5',
+      voice_settings: { stability: 0.5, similarity_boost: 0.8 }
+    })
+  })
+  .then(function(res) {
+    if (!res.ok) throw new Error('ElevenLabs error: ' + res.status);
+    return res.blob();
+  })
+  .then(function(blob) {
+    var url = URL.createObjectURL(blob);
+    var audio = new Audio(url);
+    audio.play();
+    audio.onended = function() { URL.revokeObjectURL(url); };
+  })
+  .catch(function(err) {
+    console.warn('ElevenLabs failed, falling back to browser TTS:', err);
+    if (window.speechSynthesis) {
+      var utterance = new SpeechSynthesisUtterance(text);
+      window.speechSynthesis.speak(utterance);
+    }
+  });
+}
+
+// ─── VoicePage ───
 function createVoicePage(container) {
   var messages = [];
   var isRecording = false;
@@ -165,12 +202,7 @@ function createVoicePage(container) {
     setTimeout(function() {
       typingEl.remove();
       addMessage('ai', response);
-      if (window.speechSynthesis) {
-        var utterance = new SpeechSynthesisUtterance(response);
-        utterance.rate = 1;
-        utterance.pitch = 1;
-        window.speechSynthesis.speak(utterance);
-      }
+      speakWithElevenLabs(response);
     }, 800 + Math.random() * 700);
   }
 
