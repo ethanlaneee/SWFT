@@ -1,17 +1,321 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>SWFT Voice</title>
-  <link rel="stylesheet" href="theme.css">
-  <style>
-    /* Inline critical reset to prevent FOUC */
-    html, body, #app { height: 100%; margin: 0; background: #000; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>SWFT Voice</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface2: #161616;
+  --border: rgba(255,255,255,0.06);
+  --accent: #c8f400;
+  --accent-dim: rgba(200,244,0,0.25);
+  --accent-glow: rgba(200,244,0,0.12);
+  --text: #f0f0f5;
+  --text-secondary: #8e8e93;
+  --muted: #5a5a6e;
+  --blue-bubble: #0b84fe;
+  --gray-bubble: #2c2c2e;
+  --danger: #ff453a;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { height:100%; overflow:hidden; }
+body { background:var(--bg); color:var(--text); font-family:var(--font); }
+#app { height:100%; display:flex; flex-direction:column; }
+
+@keyframes gemini-glow {
+  0%,100% { box-shadow:0 0 20px rgba(200,244,0,0.15),0 0 60px rgba(200,244,0,0.08),0 0 100px rgba(200,244,0,0.04); }
+  50% { box-shadow:0 0 30px rgba(200,244,0,0.25),0 0 80px rgba(200,244,0,0.15),0 0 120px rgba(200,244,0,0.06); }
+}
+@keyframes recording-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.12)} }
+@keyframes recording-ring { 0%{transform:scale(1);opacity:0.5} 100%{transform:scale(2.2);opacity:0} }
+@keyframes fade-in-up { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+@keyframes typing-dot { 0%,60%,100%{opacity:0.3;transform:translateY(0)} 30%{opacity:1;transform:translateY(-4px)} }
+
+.tab-bar { display:flex; justify-content:center; background:#0a0a0a; border-top:1px solid var(--border); padding:8px 0; padding-bottom:max(8px,env(safe-area-inset-bottom)); flex-shrink:0; }
+.tab-btn { flex:1; max-width:160px; display:flex; flex-direction:column; align-items:center; gap:3px; background:none; border:none; color:var(--muted); font-family:var(--font); font-size:10px; font-weight:500; letter-spacing:0.02em; cursor:pointer; padding:4px 0; transition:color 0.2s; }
+.tab-btn svg { width:24px; height:24px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.tab-btn.active { color:var(--accent); }
+
+.page { flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:0; }
+
+.voice-page { position:relative; background:var(--bg); }
+.voice-header { text-align:center; padding:16px 20px 8px; flex-shrink:0; }
+.voice-header h1 { font-size:18px; font-weight:600; letter-spacing:-0.02em; }
+.voice-header .subtitle { font-size:12px; color:var(--muted); margin-top:2px; }
+
+.voice-thread { flex:1; overflow-y:auto; padding:12px 20px; display:flex; flex-direction:column; gap:12px; min-height:0; -webkit-mask-image:linear-gradient(to bottom,transparent 0%,black 8%,black 100%); mask-image:linear-gradient(to bottom,transparent 0%,black 8%,black 100%); }
+.voice-thread::-webkit-scrollbar { display:none; }
+
+.voice-bubble { max-width:82%; padding:10px 14px; border-radius:18px; font-size:14px; line-height:1.45; animation:fade-in-up 0.3s ease-out; }
+.voice-bubble.user { align-self:flex-end; background:var(--blue-bubble); color:#fff; border-bottom-right-radius:6px; }
+.voice-bubble.ai { align-self:flex-start; background:var(--gray-bubble); color:var(--text); border-bottom-left-radius:6px; }
+.voice-bubble .timestamp { font-size:10px; color:rgba(255,255,255,0.4); margin-top:4px; }
+
+.typing-indicator { display:flex; gap:4px; padding:12px 16px; align-self:flex-start; background:var(--gray-bubble); border-radius:18px; border-bottom-left-radius:6px; animation:fade-in-up 0.2s ease-out; }
+.typing-indicator span { width:7px; height:7px; background:var(--muted); border-radius:50%; animation:typing-dot 1.4s infinite; }
+.typing-indicator span:nth-child(2) { animation-delay:0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay:0.4s; }
+
+.voice-controls { flex-shrink:0; display:flex; flex-direction:column; align-items:center; padding:12px 20px 16px; gap:14px; }
+.voice-input-row { display:flex; width:100%; gap:8px; align-items:center; }
+.voice-input { flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:22px; padding:10px 16px; color:var(--text); font-family:var(--font); font-size:15px; outline:none; transition:border-color 0.2s; }
+.voice-input:focus { border-color:var(--accent-dim); }
+.voice-input::placeholder { color:var(--muted); }
+
+.send-btn { width:38px; height:38px; border-radius:50%; background:var(--accent); border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:transform 0.15s; }
+.send-btn:active { transform:scale(0.92); }
+.send-btn svg { width:18px; height:18px; fill:#000; }
+
+.mic-container { position:relative; display:flex; align-items:center; justify-content:center; }
+.mic-btn { width:72px; height:72px; border-radius:50%; background:radial-gradient(circle at 40% 35%,#1a1a1a,#0d0d0d); border:2px solid var(--accent-dim); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:transform 0.15s,border-color 0.2s; animation:gemini-glow 3s ease-in-out infinite; z-index:2; touch-action:none; user-select:none; }
+.mic-btn svg { width:28px; height:28px; fill:none; stroke:var(--accent); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; transition:stroke 0.2s; }
+.mic-btn.recording { border-color:var(--danger); animation:recording-pulse 1s ease-in-out infinite; }
+.mic-btn.recording svg { stroke:var(--danger); }
+.mic-ring { position:absolute; width:72px; height:72px; border-radius:50%; border:1.5px solid var(--accent-dim); opacity:0; pointer-events:none; z-index:1; }
+.mic-btn.recording ~ .mic-ring { border-color:rgba(255,69,58,0.3); animation:recording-ring 1.5s ease-out infinite; }
+.mic-label { font-size:11px; color:var(--muted); letter-spacing:0.05em; margin-top:2px; }
+
+.messages-page { background:var(--bg); }
+.messages-header { display:flex; align-items:center; justify-content:space-between; padding:14px 20px 10px; flex-shrink:0; }
+.messages-header h1 { font-size:28px; font-weight:700; letter-spacing:-0.03em; }
+.messages-header .edit-btn { font-size:14px; color:var(--accent); background:none; border:none; cursor:pointer; font-family:var(--font); font-weight:500; }
+.messages-search { margin:0 20px 10px; padding:9px 14px; background:var(--surface2); border:none; border-radius:12px; color:var(--text); font-family:var(--font); font-size:14px; width:calc(100% - 40px); outline:none; }
+.messages-search::placeholder { color:var(--muted); }
+.messages-list { flex:1; overflow-y:auto; min-height:0; }
+.messages-list::-webkit-scrollbar { display:none; }
+
+.message-row { display:flex; align-items:center; gap:12px; padding:12px 20px; cursor:pointer; transition:background 0.15s; border-bottom:1px solid var(--border); }
+.message-row:active { background:var(--surface2); }
+.avatar { width:48px; height:48px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:600; color:#fff; }
+.message-info { flex:1; min-width:0; }
+.message-top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.message-name { font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.message-time { font-size:12px; color:var(--muted); flex-shrink:0; }
+.message-preview { font-size:13px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+.swft-badge { display:inline-flex; align-items:center; gap:3px; background:var(--accent-glow); color:var(--accent); font-size:10px; font-weight:600; padding:2px 7px; border-radius:6px; margin-left:6px; vertical-align:middle; letter-spacing:0.04em; }
+.swft-badge svg { width:10px; height:10px; fill:var(--accent); }
+.unread-dot { width:10px; height:10px; border-radius:50%; background:var(--accent); flex-shrink:0; }
+</style>
 </head>
 <body>
-  <div id="app"></div>
-  <script type="module" src="App.js"></script>
+<div id="app"></div>
+<script>
+function createVoicePage(container) {
+  var messages = [];
+  var isRecording = false;
+  var recognition = null;
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SR) {
+    recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+  }
+
+  function render() {
+    container.innerHTML =
+      '<div class="page voice-page">' +
+        '<div class="voice-header"><h1>SWFT Voice</h1><div class="subtitle">AI Assistant</div></div>' +
+        '<div class="voice-thread" id="voiceThread"></div>' +
+        '<div class="voice-controls">' +
+          '<div class="voice-input-row">' +
+            '<input class="voice-input" id="textInput" type="text" placeholder="Type a message..." autocomplete="off" />' +
+            '<button class="send-btn" id="sendBtn" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg></button>' +
+          '</div>' +
+          '<div class="mic-container">' +
+            '<button class="mic-btn" id="micBtn" aria-label="Hold to speak"><svg viewBox="0 0 24 24"><rect x="9" y="1" width="6" height="13" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></button>' +
+            '<div class="mic-ring"></div>' +
+          '</div>' +
+          '<div class="mic-label" id="micLabel">Hold to speak</div>' +
+        '</div>' +
+      '</div>';
+    bindEvents();
+    renderMessages();
+  }
+
+  function renderMessages() {
+    var thread = document.getElementById('voiceThread');
+    thread.innerHTML = messages.map(function(m) {
+      return '<div class="voice-bubble ' + m.role + '">' + m.text + '<div class="timestamp">' + m.time + '</div></div>';
+    }).join('');
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  function addMessage(role, text) {
+    var now = new Date();
+    var time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    messages.push({ role: role, text: text, time: time });
+    renderMessages();
+  }
+
+  function showAIResponse(userText) {
+    var thread = document.getElementById('voiceThread');
+    var typingEl = document.createElement('div');
+    typingEl.className = 'typing-indicator';
+    typingEl.innerHTML = '<span></span><span></span><span></span>';
+    thread.appendChild(typingEl);
+    thread.scrollTop = thread.scrollHeight;
+    var response = generateResponse(userText);
+    setTimeout(function() {
+      typingEl.remove();
+      addMessage('ai', response);
+      if (window.speechSynthesis) {
+        var utterance = new SpeechSynthesisUtterance(response);
+        utterance.rate = 1;
+        utterance.pitch = 1;
+        window.speechSynthesis.speak(utterance);
+      }
+    }, 800 + Math.random() * 700);
+  }
+
+  function generateResponse(input) {
+    var lower = input.toLowerCase();
+    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey'))
+      return "Hey there! I'm SWFT, your AI assistant. What can I help you with?";
+    if (lower.includes('weather'))
+      return "I'd check the forecast for you, but I'm better at conversations! Try asking me something creative.";
+    if (lower.includes('time'))
+      return "It's currently " + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ". Anything else?";
+    if (lower.includes('name'))
+      return "I'm SWFT \u2014 Simple, Smart, and Swift. Built to make your day easier.";
+    if (lower.includes('joke')) {
+      var jokes = [
+        "Why do programmers prefer dark mode? Because light attracts bugs.",
+        "I told my AI a joke. It didn't laugh \u2014 it just optimized the punchline.",
+        "Why was the JavaScript developer sad? Because he didn't Node how to Express himself."
+      ];
+      return jokes[Math.floor(Math.random() * jokes.length)];
+    }
+    if (lower.includes('how are you') || lower.includes('how do you'))
+      return "I'm running at peak performance! Thanks for asking. What's on your mind?";
+    var defaults = [
+      'Interesting \u2014 "' + input + '". Tell me more and I\'ll do my best to help!',
+      'I hear you. Let me think about "' + input + '"... I\'d suggest exploring that idea further!',
+      'That\'s a great thought. Anything specific about "' + input + '" you want to dive into?'
+    ];
+    return defaults[Math.floor(Math.random() * defaults.length)];
+  }
+
+  function bindEvents() {
+    var micBtn = document.getElementById('micBtn');
+    var micLabel = document.getElementById('micLabel');
+    var textInput = document.getElementById('textInput');
+    var sendBtn = document.getElementById('sendBtn');
+    var finalTranscript = '';
+
+    micBtn.addEventListener('pointerdown', function(e) {
+      e.preventDefault();
+      micBtn.setPointerCapture(e.pointerId);
+      isRecording = true;
+      finalTranscript = '';
+      micBtn.classList.add('recording');
+      micLabel.textContent = 'Listening...';
+      if (recognition) {
+        recognition.onresult = function(event) {
+          for (var i = event.resultIndex; i < event.results.length; i++) {
+            if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+          }
+        };
+        recognition.onerror = function() {};
+        try { recognition.start(); } catch(ex) {}
+      }
+    });
+
+    micBtn.addEventListener('pointerup', function(e) {
+      e.preventDefault();
+      if (!isRecording) return;
+      isRecording = false;
+      micBtn.classList.remove('recording');
+      micLabel.textContent = 'Hold to speak';
+      if (recognition) recognition.stop();
+      setTimeout(function() {
+        var text = finalTranscript.trim();
+        if (text) { addMessage('user', text); showAIResponse(text); }
+      }, 300);
+    });
+
+    micBtn.addEventListener('pointercancel', function() {
+      isRecording = false;
+      micBtn.classList.remove('recording');
+      micLabel.textContent = 'Hold to speak';
+      if (recognition) recognition.stop();
+    });
+
+    sendBtn.addEventListener('click', sendText);
+    textInput.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); sendText(); } });
+
+    function sendText() {
+      var text = textInput.value.trim();
+      if (!text) return;
+      textInput.value = '';
+      addMessage('user', text);
+      showAIResponse(text);
+    }
+  }
+
+  render();
+}
+
+var CONVERSATIONS = [
+  { name:'Sarah Chen', initials:'SC', color:'#5856d6', preview:'Sounds good! See you at 7', time:'2:14 PM', unread:true, swft:false },
+  { name:'SWFT AI', initials:'\u26A1', color:'#1a1a1a', preview:'Here\'s a summary of your meeting notes...', time:'1:48 PM', unread:true, swft:true, border:'#c8f400' },
+  { name:'Mike Torres', initials:'MT', color:'#ff9500', preview:'Did you see the game last night?', time:'12:30 PM', unread:false, swft:false },
+  { name:'Design Team', initials:'DT', color:'#30d158', preview:'Alex: Updated the Figma file with new flows', time:'11:15 AM', unread:false, swft:false },
+  { name:'SWFT Drafts', initials:'\u2726', color:'#1a1a1a', preview:'Draft: Follow-up email for client meeting', time:'10:02 AM', unread:false, swft:true, border:'#c8f400' },
+  { name:'Jordan Blake', initials:'JB', color:'#ff375f', preview:'Thanks for the recommendation!', time:'9:45 AM', unread:false, swft:false },
+  { name:'Mom', initials:'M', color:'#af52de', preview:'Call me when you get a chance honey', time:'Yesterday', unread:false, swft:false },
+  { name:'Priya Patel', initials:'PP', color:'#007aff', preview:'The report is attached. Let me know!', time:'Yesterday', unread:false, swft:false },
+  { name:'SWFT AI', initials:'\u26A1', color:'#1a1a1a', preview:'Reminder: Your flight is at 6:30 AM tomorrow', time:'Yesterday', unread:false, swft:true, border:'#c8f400' },
+  { name:'Running Club', initials:'RC', color:'#00c7be', preview:'Next run is Saturday at 8am, Lake Trail', time:'Monday', unread:false, swft:false },
+  { name:'David Kim', initials:'DK', color:'#ff6482', preview:'Let\'s catch up over coffee this week?', time:'Monday', unread:false, swft:false }
+];
+
+function createMessagePage(container) {
+  function renderRow(c) {
+    var avatarStyle = c.border ? 'background:'+c.color+';border:2px solid '+c.border+';' : 'background:'+c.color+';';
+    var badge = c.swft ? '<span class="swft-badge"><svg viewBox="0 0 12 12"><polygon points="6,0 7.5,4.5 12,4.5 8.25,7.5 9.75,12 6,9 2.25,12 3.75,7.5 0,4.5 4.5,4.5"/></svg> SWFT</span>' : '';
+    var dot = c.unread ? '<div class="unread-dot"></div>' : '';
+    return '<div class="message-row"><div class="avatar" style="'+avatarStyle+'">'+c.initials+'</div><div class="message-info"><div class="message-top"><span class="message-name">'+c.name+badge+'</span><span class="message-time">'+c.time+'</span></div><div class="message-preview">'+c.preview+'</div></div>'+dot+'</div>';
+  }
+  container.innerHTML =
+    '<div class="page messages-page">' +
+      '<div class="messages-header"><button class="edit-btn">Edit</button><h1>Messages</h1><button class="edit-btn" style="font-size:20px;">&#9998;</button></div>' +
+      '<input class="messages-search" type="text" placeholder="Search" />' +
+      '<div class="messages-list">' + CONVERSATIONS.map(renderRow).join('') + '</div>' +
+    '</div>';
+}
+
+var currentPage = 'voice';
+var pages = { voice: createVoicePage, messages: createMessagePage };
+
+function renderApp() {
+  var app = document.getElementById('app');
+  app.innerHTML =
+    '<div id="pageContainer"></div>' +
+    '<nav class="tab-bar">' +
+      '<button class="tab-btn ' + (currentPage==='voice'?'active':'') + '" data-page="voice"><svg viewBox="0 0 24 24"><rect x="9" y="1" width="6" height="13" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Voice</button>' +
+      '<button class="tab-btn ' + (currentPage==='messages'?'active':'') + '" data-page="messages"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Messages</button>' +
+    '</nav>';
+
+  var container = document.getElementById('pageContainer');
+  container.style.cssText = 'flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;';
+  pages[currentPage](container);
+
+  app.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var page = btn.dataset.page;
+      if (page !== currentPage) { currentPage = page; renderApp(); }
+    });
+  });
+}
+
+renderApp();
+</script>
 </body>
 </html>
